@@ -40,6 +40,7 @@ import {
   ProjectStatusBadge,
 } from '@/features/projects/badges';
 import { EnvironmentDialog } from '@/features/projects/EnvironmentDialog';
+import { InsightsTab } from '@/features/insights/InsightsTab';
 import { Board } from '@/features/planning/Board';
 import { SprintsTab } from '@/features/planning/SprintsTab';
 import { VaultTab } from '@/features/vault/VaultTab';
@@ -53,6 +54,7 @@ import { cn, formatDateTime } from '@/lib/utils';
 
 const TABS = [
   'overview',
+  'insights',
   'work-items',
   'board',
   'sprints',
@@ -63,6 +65,7 @@ const TABS = [
 type Tab = (typeof TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   overview: 'Overview',
+  insights: 'Insights',
   'work-items': 'Backlog',
   board: 'Board',
   sprints: 'Sprints',
@@ -563,6 +566,7 @@ export function ProjectDetailPage() {
       {tab === 'environments' && <EnvironmentsTab p={p} />}
       {tab === 'members' && <MembersTab p={p} />}
       {tab === 'work-items' && <Backlog project={p} />}
+      {tab === 'insights' && <InsightsTab project={p} />}
       {tab === 'board' && <Board project={p} />}
       {tab === 'sprints' && <SprintsTab project={p} />}
       {tab === 'vault' && <VaultTab project={p} />}

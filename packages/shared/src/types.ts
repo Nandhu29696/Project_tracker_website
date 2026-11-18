@@ -15,6 +15,7 @@ import type {
   WorkItemType,
 } from './schemas/workitem';
 import type { BoardColumn, BoardSettings, IterationState } from './schemas/planning';
+import type { Health, NotificationType } from './schemas/insights';
 
 /** User shape returned by the API (never contains secrets). */
 export interface PublicUser {
@@ -332,6 +333,58 @@ export interface CredentialImportResult {
   sections: CredentialImportSection[];
   created: number;
   skipped: number;
+}
+
+// ---- notifications, search, insights, reports (Phase 5) ----------------------------------
+
+export interface NotificationDto {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  link: string | null;
+  actor: UserRef | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface SearchResults {
+  workItems: (WorkItemRef & { project: ProjectRef; snippet: string | null })[];
+  projects: (ProjectRef & { status: ProjectStatus })[];
+}
+
+export interface Insights {
+  health: Health;
+  counts: { open: number; overdue: number; done: number; total: number };
+  byState: { category: 'proposed' | 'in_progress' | 'resolved' | 'completed'; count: number }[];
+  bugsBySeverity: { severity: Severity; count: number }[];
+  workload: { user: UserRef | null; openItems: number; remainingHours: number }[];
+  velocity: { sprint: string; committed: number; completed: number }[];
+  flow: { weekStart: string; created: number; closed: number }[];
+  overdue: WorkItemSummary[];
+  activeSprint: {
+    id: string;
+    name: string;
+    endDate: string;
+    completedPoints: number;
+    totalPoints: number;
+  } | null;
+}
+
+export interface PortfolioRow {
+  project: ProjectSummary;
+  health: Health;
+  openItems: number;
+  overdueItems: number;
+  openBugs: number;
+  openCriticalBugs: number;
+  activeSprint: {
+    name: string;
+    completedPoints: number;
+    totalPoints: number;
+    endDate: string;
+  } | null;
+  lastActivity: string;
 }
 
 export interface AuthProviders {

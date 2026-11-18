@@ -41,6 +41,8 @@ export function initRealtime(server: HttpServer) {
 
   io.on('connection', (socket) => {
     const user = socket.data.user as { id: string; role: string };
+    // personal room: notifications for this user
+    void socket.join(`user:${user.id}`);
 
     socket.on('project:join', async (projectId: unknown, ack?: (r: { ok: boolean }) => void) => {
       if (typeof projectId !== 'string' || !/^[0-9a-f-]{36}$/i.test(projectId))
@@ -71,6 +73,11 @@ export function notifyProject(
   extra: Record<string, unknown> = {},
 ) {
   io?.to(`project:${projectId}`).emit('project:changed', { projectId, scope, ...extra });
+}
+
+/** Push an event to one user (all their open tabs). */
+export function notifyUser(userId: string, event: string, payload: Record<string, unknown> = {}) {
+  io?.to(`user:${userId}`).emit(event, payload);
 }
 
 export async function closeRealtime() {

@@ -14,7 +14,8 @@
     "db:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "reminders": "dotenv -e ../../.env -- tsx scripts/run-due-reminders.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

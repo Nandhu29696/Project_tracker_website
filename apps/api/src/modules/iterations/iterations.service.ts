@@ -215,7 +215,10 @@ export async function completeIteration(user: Express.AuthUser, id: string, move
     where: { iterationId: id, state: { not: 'REMOVED' } },
     select: { id: true, state: true },
   });
-  const toMove = unfinished.filter((w) => STATE_CATEGORY[w.state] !== 'completed').map((w) => w.id);
+  // resolved counts as done for the sprint (same rule as the sprint stats / velocity)
+  const toMove = unfinished
+    .filter((w) => !['resolved', 'completed'].includes(STATE_CATEGORY[w.state]))
+    .map((w) => w.id);
   await prisma.$transaction([
     prisma.workItem.updateMany({ where: { id: { in: toMove } }, data: { iterationId: targetId } }),
     prisma.workItemHistory.createMany({

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Field, Input, PasswordInput } from '@/components/ui/form';
 import { Avatar, Badge, Card, CardHeader } from '@/components/ui/misc';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { NotificationSettings } from '@/features/insights/NotificationSettings';
 import { api, getErrorMessage } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 
@@ -180,6 +181,8 @@ export function ProfilePage() {
           <PasswordForm user={user} />
         </Card>
       </div>
+
+      <NotificationSettings />
     </div>
   );
 }

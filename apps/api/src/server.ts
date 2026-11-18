@@ -5,6 +5,7 @@ import { verifyMailConnection } from './lib/mail/mailer';
 import { prisma } from './lib/prisma';
 import { closeRealtime, initRealtime } from './lib/realtime';
 import { startSnapshotScheduler } from './modules/iterations/snapshots';
+import { startReminderScheduler } from './modules/notifications/reminders';
 
 const app = createApp();
 
@@ -18,10 +19,12 @@ const server = app.listen(env.PORT, () => {
 });
 initRealtime(server);
 const stopSnapshots = startSnapshotScheduler();
+const stopReminders = startReminderScheduler();
 
 async function shutdown(signal: string) {
   logger.info(`${signal} received, shutting down`);
   stopSnapshots();
+  stopReminders();
   await closeRealtime();
   server.close(async () => {
     await prisma.$disconnect();

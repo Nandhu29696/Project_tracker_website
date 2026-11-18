@@ -25,3 +25,25 @@
     @apply outline-2 outline-offset-2 outline-brand-500;
   }
 }
+
+/* chart series colours (validated for CVD + contrast on the card surfaces, both themes) */
+:root {
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-surface: #ffffff;
+}
+.dark {
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-surface: #0f172a;
+}
+
+/* print / "Save as PDF": only the report content */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}

@@ -32,6 +32,8 @@ const CategoriesPage = named(() => import('@/pages/admin/CategoriesPage'), 'Cate
 const MyWorkPage = named(() => import('@/pages/workitems/MyWorkPage'), 'MyWorkPage');
 const WorkItemPage = named(() => import('@/pages/workitems/WorkItemPage'), 'WorkItemPage');
 const WorkItemsPage = named(() => import('@/pages/workitems/WorkItemQueryPage'), 'WorkItemsPage');
+const ReportsPage = named(() => import('@/pages/ReportsPage'), 'ReportsPage');
+const NotificationsPage = named(() => import('@/pages/NotificationsPage'), 'NotificationsPage');
 const SprintsPage = named(() => import('@/pages/SprintsPage'), 'SprintsPage');
 const ImportCredentialsPage = named(
   () => import('@/pages/vault/ImportCredentialsPage'),
@@ -61,6 +63,7 @@ export function App() {
             <Route element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
               <Route path="profile" element={<ProfilePage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
               <Route element={<RequirePermission permission="workitem:read" />}>
                 <Route path="my-work" element={<MyWorkPage />} />
                 <Route path="work-items" element={<WorkItemsPage />} />
@@ -69,6 +72,7 @@ export function App() {
               </Route>
               <Route element={<RequirePermission permission="project:read" />}>
                 <Route path="projects" element={<ProjectsPage />} />
+                <Route path="reports" element={<ReportsPage />} />
                 <Route path="projects/:id" element={<ProjectDetailPage />} />
               </Route>
               <Route element={<RequirePermission permission="data:import" />}>

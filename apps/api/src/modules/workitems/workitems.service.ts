@@ -22,6 +22,7 @@ import {
   type Paginated,
   type UpdateWorkItemInput,
   type WorkItemDetail,
+  type WorkItemState,
   type WorkItemSummary,
   type WorkItemType,
 } from '@tracker/shared';
@@ -30,7 +31,7 @@ import { env } from '../../config/env';
 import { audit } from '../../lib/audit';
 import { fromDbDate, toDbDate } from '../../lib/dates';
 import { badRequest, forbidden } from '../../lib/errors';
-import { sendEmailLater } from '../../lib/mail/mailer';
+import { notifyLater } from '../notifications/notifications.service';
 import { templates } from '../../lib/mail/templates';
 import { prisma } from '../../lib/prisma';
 import { loadProjectAccess, projectWorkItemAccess, visibleProjectsWhere } from '../projects/access';
@@ -345,22 +346,15 @@ export async function createWorkItem(
     entityId: created.id,
     metadata: { key },
   });
-  if (assignee && assignee.id !== user.id) {
-    sendEmailLater(
-      assignee.email,
-      templates.workItemAssigned(
-        assignee.name,
-        user.name,
-        {
-          key,
-          title: created.title,
-          typeLabel: WORK_ITEM_TYPE_LABELS[created.type],
-          priorityLabel: PRIORITY_LABELS[created.priority],
-        },
-        itemUrl(key),
-      ),
-    );
-  }
+  if (assignee)
+    notifyAssigned(user, assignee.id, {
+      id: created.id,
+      projectId,
+      key,
+      title: created.title,
+      type: created.type,
+      priority: created.priority,
+    });
   afterChange(projectId, [created.iterationId]);
   return getWorkItem(user, created.id);
 }
@@ -385,6 +379,7 @@ export async function updateWorkItem(
     if (oldValue !== newValue) history.push({ field, oldValue, newValue });
   };
   const isBug = item.type === 'BUG';
+  let newAssigneeId: string | null | undefined; // undefined = assignee unchanged
 
   if (input.title !== undefined && input.title !== item.title) {
     data.title = input.title;
@@ -464,23 +459,7 @@ export async function updateWorkItem(
       : null;
     data.assigneeId = assignee?.id ?? null;
     track('Assigned to', previous?.name ?? null, assignee?.name ?? null);
-    if (assignee && assignee.id !== user.id) {
-      const key = workItemKey(item.project.key, item.number);
-      sendEmailLater(
-        assignee.email,
-        templates.workItemAssigned(
-          assignee.name,
-          user.name,
-          {
-            key,
-            title: input.title ?? item.title,
-            typeLabel: WORK_ITEM_TYPE_LABELS[item.type],
-            priorityLabel: PRIORITY_LABELS[input.priority ?? item.priority],
-          },
-          itemUrl(key),
-        ),
-      );
-    }
+    newAssigneeId = assignee?.id ?? null; // notified after the save succeeds
   }
 
   // parent
@@ -584,8 +563,80 @@ export async function updateWorkItem(
       }),
     ]);
     afterChange(item.projectId, [item.iterationId, data.iterationId as string | null | undefined]);
+
+    // notifications only after the change is saved
+    const key = workItemKey(item.project.key, item.number);
+    const ref = {
+      id,
+      projectId: item.projectId,
+      key,
+      title: (data.title as string | undefined) ?? item.title,
+      type: item.type,
+      priority: input.priority ?? item.priority,
+    };
+    if (newAssigneeId) notifyAssigned(user, newAssigneeId, ref);
+    if (data.state) {
+      const to = WORK_ITEM_STATE_LABELS[data.state as WorkItemState];
+      const from = WORK_ITEM_STATE_LABELS[item.state];
+      notifyLater({
+        type: 'STATE_CHANGED',
+        // the people who care: whoever created it and whoever owns it now
+        userIds: [item.createdById, newAssigneeId === undefined ? item.assigneeId : newAssigneeId],
+        actorId: user.id,
+        title: `${key} moved to ${to}`,
+        body: `${user.name}: ${from} → ${to} · ${ref.title}`,
+        link: `/items/${key}`,
+        projectId: item.projectId,
+        workItemId: id,
+        email: (r) =>
+          templates.workItemActivity(
+            'state-changed',
+            r.name,
+            `${user.name} moved it to ${to}`,
+            { key, title: ref.title },
+            `${from} → ${to}`,
+            itemUrl(key),
+          ),
+      });
+    }
   }
   return getWorkItem(user, id);
+}
+
+function notifyAssigned(
+  actor: Express.AuthUser,
+  assigneeId: string,
+  item: {
+    id: string;
+    projectId: string;
+    key: string;
+    title: string;
+    type: WorkItemType;
+    priority: WorkItemSummary['priority'];
+  },
+) {
+  notifyLater({
+    type: 'ASSIGNED',
+    userIds: [assigneeId],
+    actorId: actor.id,
+    title: `${actor.name} assigned ${item.key} to you`,
+    body: item.title,
+    link: `/items/${item.key}`,
+    projectId: item.projectId,
+    workItemId: item.id,
+    email: (r) =>
+      templates.workItemAssigned(
+        r.name,
+        actor.name,
+        {
+          key: item.key,
+          title: item.title,
+          typeLabel: WORK_ITEM_TYPE_LABELS[item.type],
+          priorityLabel: PRIORITY_LABELS[item.priority],
+        },
+        itemUrl(item.key),
+      ),
+  });
 }
 
 export async function deleteWorkItem(user: Express.AuthUser, id: string) {

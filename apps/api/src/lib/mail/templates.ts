@@ -278,4 +278,40 @@ export const templates = {
       ]),
     };
   },
+
+  /** Generic work item activity (state change, new comment, due soon). */
+  workItemActivity(
+    template: string,
+    name: string,
+    headline: string,
+    item: { key: string; title: string },
+    detail: string | null,
+    url: string,
+  ): EmailContent {
+    const short = detail && detail.length > 300 ? `${detail.slice(0, 300)}…` : detail;
+    return {
+      template,
+      subject: `[${item.key}] ${headline}`,
+      html: layout({
+        preheader: `${item.key}: ${headline}`,
+        heading: headline,
+        paragraphs: [
+          `Hi ${escapeHtml(name)}, <strong>${escapeHtml(item.key)} · ${escapeHtml(item.title)}</strong>`,
+          ...(short
+            ? [
+                `<span style="display:block;border-left:3px solid #cbd5e1;padding-left:12px;color:#475569;white-space:pre-line">${escapeHtml(short)}</span>`,
+              ]
+            : []),
+        ],
+        action: { label: `Open ${item.key}`, url },
+        footnote: 'Change which emails you receive under Profile & security → Notifications.',
+      }),
+      text: text([
+        `Hi ${name},`,
+        `${item.key} - ${item.title}: ${headline}`,
+        short ?? undefined,
+        url,
+      ]),
+    };
+  },
 };

@@ -14,5 +14,12 @@
     "noUnusedLocals": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "prisma/seed.ts", "prisma.config.ts", "tsup.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "scripts",
+    "prisma/seed.ts",
+    "prisma.config.ts",
+    "tsup.config.ts",
+    "vitest.config.ts"
+  ]
 }

@@ -14,7 +14,7 @@ import {
 } from '@tracker/shared';
 import { audit } from '../../lib/audit';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors';
-import { sendEmailLater } from '../../lib/mail/mailer';
+import { notifyLater } from '../notifications/notifications.service';
 import { templates } from '../../lib/mail/templates';
 import { prisma } from '../../lib/prisma';
 import { userRefSelect } from '../projects/project.mapper';
@@ -83,14 +83,59 @@ export async function addComment(
   });
   await prisma.workItem.update({ where: { id: workItemId }, data: { updatedAt: new Date() } });
 
-  for (const m of mentioned) {
-    sendEmailLater(
-      m.email,
-      templates.mentioned(m.name, user.name, { key, title: item.title }, input.body, itemUrl(key)),
-    );
-  }
+  notifyMentions(
+    user,
+    item,
+    key,
+    mentioned.map((m) => m.id),
+    input.body,
+  );
+  // creator + owner hear about new comments, unless they were mentioned (they already got that)
+  notifyLater({
+    type: 'COMMENTED',
+    userIds: [item.createdById, item.assigneeId].filter(
+      (id) => !mentioned.some((m) => m.id === id),
+    ),
+    actorId: user.id,
+    title: `${user.name} commented on ${key}`,
+    body: input.body.slice(0, 200),
+    link: `/items/${key}`,
+    projectId: item.projectId,
+    workItemId: item.id,
+    email: (r) =>
+      templates.workItemActivity(
+        'commented',
+        r.name,
+        `${user.name} commented`,
+        { key, title: item.title },
+        input.body,
+        itemUrl(key),
+      ),
+  });
   const users = await mentionMap(comment.mentions);
   return toCommentDto(comment, users, { userId: user.id, canComment: true, canManageProject });
+}
+
+function notifyMentions(
+  user: Express.AuthUser,
+  item: { id: string; projectId: string; title: string },
+  key: string,
+  userIds: string[],
+  body: string,
+) {
+  if (!userIds.length) return;
+  notifyLater({
+    type: 'MENTIONED',
+    userIds,
+    actorId: user.id,
+    title: `${user.name} mentioned you on ${key}`,
+    body: body.slice(0, 200),
+    link: `/items/${key}`,
+    projectId: item.projectId,
+    workItemId: item.id,
+    email: (r) =>
+      templates.mentioned(r.name, user.name, { key, title: item.title }, body, itemUrl(key)),
+  });
 }
 
 async function loadComment(user: Express.AuthUser, commentId: string) {
@@ -118,12 +163,13 @@ export async function updateComment(
     data: { body: input.body, mentions: mentioned.map((m) => m.id), editedAt: new Date() },
     include: commentInclude,
   });
-  for (const m of newlyMentioned) {
-    sendEmailLater(
-      m.email,
-      templates.mentioned(m.name, user.name, { key, title: item.title }, input.body, itemUrl(key)),
-    );
-  }
+  notifyMentions(
+    user,
+    item,
+    key,
+    newlyMentioned.map((m) => m.id),
+    input.body,
+  );
   const users = await mentionMap(updated.mentions);
   return toCommentDto(updated, users, { userId: user.id, canComment: true, canManageProject });
 }

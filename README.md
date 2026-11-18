@@ -61,6 +61,14 @@ Roadmap and design: see [PROJECT_PLAN.md](PROJECT_PLAN.md).
 
 > After importing the passwords that lived in `Project Details.xlsx`, change them in the systems they belong to and rotate them in the vault — they have been stored in plain text in a spreadsheet.
 
+## Phase 5 status — done
+
+- **Notifications**: bell in the top bar with a live unread count and a full `/notifications` page. Triggers: assigned to you, @mentioned, state change and new comments on items you created or own, due tomorrow, added to a project. Everyone can switch **email** per type under Profile → Notifications (in-app is always on). Actors are never notified about their own changes
+- **Search** (`Ctrl+K` or the search box): PostgreSQL full-text search over work item titles and descriptions (prefix matching, ranked, highlighted snippet), exact keys like `BCM-12`, project names; results respect project access. The palette also has quick actions
+- **Project → Insights**: health (on track / at risk / off track **with the reasons**), open / overdue / done counts, work by state, open bugs by severity, created vs closed per week, sprint velocity (committed vs completed), workload per person, overdue list, **Excel report** (summary, work items, bugs, sprints)
+- **Reports** (sidebar): portfolio of every project you can see — health, open work, bugs, active sprint, target date, deployments — filter by health, export to **Excel**, or **Print / Save as PDF**
+- **Dashboard**: live counts plus a "Due soon" list of your items due in the next 7 days
+
 ## Repository layout
 
 ```
@@ -211,7 +219,15 @@ GET|POST /api/v1/projects/:id/credentials    PATCH|DELETE /api/v1/credentials/:i
 POST /api/v1/credentials/:id/reveal          GET /api/v1/credentials/:id/access-log
 POST /api/v1/vault/import?dryRun=true|false  (raw .xlsx; commit needs X-Import-Map header)
 
+GET  /api/v1/notifications?unread=true&page   GET /api/v1/notifications/unread-count
+POST /api/v1/notifications/read  { "ids": ["<id>"] | "all" }
+GET|PUT /api/v1/notifications/preferences     { "email": { "COMMENTED": false } }
+GET  /api/v1/search?q=<text>&limit=8
+GET  /api/v1/projects/:id/insights           GET /api/v1/projects/:id/report.xlsx
+GET  /api/v1/reports/portfolio?archived=true  GET /api/v1/reports/portfolio.xlsx
+
 Socket.IO (path /socket.io): connect with auth { token: <access token> },
+every socket also receives "notification:new" / "notification:read" for its own user,
 emit "project:join" <projectId>, receive "project:changed" { projectId, scope }
 ```
 
@@ -225,3 +241,5 @@ Errors are always `{ "error": { "code", "message", "details?" } }`.
 - Auth endpoints allow 20 attempts per IP per 15 minutes (`AUTH_RATE_LIMIT`). Counters are in memory, so restarting the API resets them.
 - **Back up `VAULT_ENCRYPTION_KEY`** separately from the database backups. Without it the stored secrets cannot be decrypted; with it, a database dump alone is still useless to an attacker.
 - Live updates use in-memory Socket.IO rooms: run one API instance (or add the Socket.IO Redis adapter before scaling out). Burndown snapshots are taken on every sprint change plus hourly.
+- Notifications are stored in PostgreSQL and emailed in the background (no Redis/BullMQ needed). The "due tomorrow" job runs hourly inside the API and records which due date it reminded about, so it never sends twice — even across restarts. `npm run reminders -w @tracker/api` runs it once by hand (e.g. from cron).
+- Search uses a `tsvector` column maintained by a database trigger (see the `search_trigger` migration) with the `simple` text configuration, so it works for any language and for codes / names.

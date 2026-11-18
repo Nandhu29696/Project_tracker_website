@@ -18,7 +18,7 @@ import { env } from '../../config/env';
 import { audit } from '../../lib/audit';
 import { fromDbDate, toDbDate } from '../../lib/dates';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors';
-import { sendEmailLater } from '../../lib/mail/mailer';
+import { notifyLater } from '../notifications/notifications.service';
 import { templates } from '../../lib/mail/templates';
 import { prisma } from '../../lib/prisma';
 import {
@@ -270,19 +270,24 @@ export async function addMember(user: Express.AuthUser, projectId: string, input
     entityId: projectId,
     metadata: { userId: input.userId, role: input.role },
   });
-  if (target.id !== user.id) {
-    sendEmailLater(
-      target.email,
+  notifyLater({
+    type: 'ADDED_TO_PROJECT',
+    userIds: [target.id],
+    actorId: user.id,
+    title: `${user.name} added you to ${project.key} · ${project.name}`,
+    body: `Role: ${PROJECT_ROLE_LABELS[input.role]}`,
+    link: `/projects/${projectId}`,
+    projectId,
+    email: (r) =>
       templates.projectMemberAdded(
-        target.name,
+        r.name,
         user.name,
         project.name,
         project.key,
         PROJECT_ROLE_LABELS[input.role],
         projectUrl(projectId),
       ),
-    );
-  }
+  });
   return getProject(user, projectId);
 }
 

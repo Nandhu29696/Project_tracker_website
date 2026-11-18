@@ -11,6 +11,8 @@ import { apiLimiter } from './middleware/security';
 import { authRouter } from './modules/auth/auth.routes';
 import { usersRouter } from './modules/users/users.routes';
 import { categoriesRouter } from './modules/categories/categories.routes';
+import { notificationsRouter } from './modules/notifications/notifications.routes';
+import { insightsRouter } from './modules/insights/insights.routes';
 import { workItemsRouter } from './modules/workitems/workitems.routes';
 import { iterationsRouter } from './modules/iterations/iterations.routes';
 import { vaultRouter } from './modules/vault/vault.routes';
@@ -52,6 +54,8 @@ export function createApp() {
   v1.use(workItemsRouter); // project-scoped + /work-items, /comments, /attachments ...
   v1.use(iterationsRouter); // /projects/:id/iterations + /iterations
   v1.use(vaultRouter); // /projects/:id/credentials + /credentials + /vault
+  v1.use('/notifications', notificationsRouter);
+  v1.use(insightsRouter); // /search, /projects/:id/insights, /reports/*
   v1.use('/categories', categoriesRouter);
   v1.use('/projects', projectsRouter);
   v1.use('/environments', environmentsRouter);

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
+  BarChart3,
   Bug,
   ChevronDown,
   FolderKanban,
@@ -25,6 +26,8 @@ import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge } from '@/components/ui/misc';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { CommandPalette } from '@/features/insights/CommandPalette';
+import { NotificationBell } from '@/features/insights/NotificationBell';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +53,7 @@ const mainNav: NavItem[] = [
   { to: '/work-items', label: 'Work Items', icon: ListTodo, permission: 'workitem:read' },
   { to: '/bugs', label: 'Bugs', icon: Bug, permission: 'workitem:read' },
   { to: '/sprints', label: 'Sprints', icon: Timer, permission: 'workitem:read' },
+  { to: '/reports', label: 'Reports', icon: BarChart3, permission: 'project:read' },
 ];
 
 const adminNav: NavItem[] = [
@@ -175,8 +179,21 @@ function UserMenu() {
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { theme, toggle } = useTheme();
   const { can } = useAuth();
+
+  // Ctrl/Cmd+K opens search anywhere
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const sidebar = (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto px-3 py-4">
@@ -188,7 +205,7 @@ export function AppLayout() {
   return (
     <div className="min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex dark:border-slate-800 dark:bg-slate-900">
+      <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex dark:border-slate-800 dark:bg-slate-900">
         <div className="flex h-16 items-center border-b border-slate-200 px-5 dark:border-slate-800">
           <Link to="/">
             <Logo />
@@ -222,8 +239,8 @@ export function AppLayout() {
         </div>
       )}
 
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6 dark:border-slate-800 dark:bg-slate-900/90">
+      <div className="lg:pl-64 print:pl-0">
+        <header className="no-print sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6 dark:border-slate-800 dark:bg-slate-900/90">
           <Button
             variant="ghost"
             size="icon"
@@ -234,21 +251,35 @@ export function AppLayout() {
             <Menu className="h-5 w-5" />
           </Button>
 
-          <div className="relative hidden max-w-md flex-1 sm:block">
-            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              disabled
-              placeholder="Search work items… (coming in Phase 5)"
-              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pr-3 pl-9 text-sm placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="hidden h-9 max-w-md flex-1 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-400 hover:border-slate-300 sm:flex dark:border-slate-700 dark:bg-slate-800"
+            aria-label="Search (Ctrl+K)"
+          >
+            <Search className="h-4 w-4" />
+            <span className="flex-1">Search work items, projects…</span>
+            <kbd className="rounded border border-slate-200 px-1.5 text-[10px] dark:border-slate-600">
+              Ctrl K
+            </kbd>
+          </button>
 
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="sm:hidden"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </Button>
             {can('workitem:create') && (
               <Button size="sm" onClick={() => setCreateOpen(true)} aria-label="New work item">
                 <Plus className="h-4 w-4" /> <span className="hidden sm:inline">New</span>
               </Button>
             )}
+            <NotificationBell />
             <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle dark mode">
               {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
@@ -265,6 +296,11 @@ export function AppLayout() {
           <CreateWorkItemDialog open onClose={() => setCreateOpen(false)} />
         </Suspense>
       )}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNewItem={() => setCreateOpen(true)}
+      />
     </div>
   );
 }

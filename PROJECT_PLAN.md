@@ -504,11 +504,11 @@ SMTP_HOST=  SMTP_PORT=  SMTP_USER=  SMTP_PASS=  MAIL_FROM=
 **Deliverable:** Agile planning like ADO Boards/Sprints; secrets out of Excel.
 
 ### Phase 5 — Dashboards, Notifications & Reporting (Weeks 11–12)
-- [ ] Dashboards: project health, burndown, velocity, bugs by severity/state, workload per assignee, overdue items
-- [ ] Admin overview: all projects status (replacement for the Excel sheet)
-- [ ] In-app notifications + email (assigned, mentioned, state changed, due tomorrow) via BullMQ/Redis
-- [ ] Global search (`Ctrl+K`) using Postgres full-text
-- [ ] Export reports (Excel/PDF)
+- [x] Dashboards: project health (explainable rules), burndown, velocity, bugs by severity/state, workload per assignee, overdue items, created vs closed, due-soon card
+- [x] Admin overview: all projects status (replacement for the Excel sheet) — Reports page
+- [x] In-app notifications + email (assigned, mentioned, state changed, commented, due tomorrow, added to project), live bell, per-type email preferences — _PostgreSQL-backed with an idempotent in-process reminder job instead of BullMQ/Redis (no Redis in this setup); swap in a queue when scaling out_
+- [x] Global search (`Ctrl+K`) using Postgres full-text (trigger-maintained tsvector + GIN, ranked, highlighted snippets)
+- [x] Export reports (Excel: portfolio + per-project workbook; PDF: print-optimised Reports page → Save as PDF)
 
 **Deliverable:** management visibility & alerts.
 

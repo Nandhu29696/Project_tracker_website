@@ -5,4 +5,5 @@ export * from './schemas/user';
 export * from './schemas/project';
 export * from './schemas/workitem';
 export * from './schemas/planning';
+export * from './schemas/insights';
 export * from './types';
