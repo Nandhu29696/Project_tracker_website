@@ -1,0 +1,46 @@
+{
+  "name": "project-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Project & work-item tracker (ADO-style) with role based access",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:api": "npm run dev -w @tracker/api",
+    "dev:web": "npm run dev -w @tracker/web",
+    "build": "npm run build -w @tracker/api && npm run build -w @tracker/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "npm run db:generate -w @tracker/api",
+    "db:migrate": "npm run db:migrate -w @tracker/api",
+    "db:deploy": "npm run db:deploy -w @tracker/api",
+    "db:seed": "npm run db:seed -w @tracker/api",
+    "db:studio": "npm run db:studio -w @tracker/api",
+    "db:local:init": "node scripts/local-db.mjs init",
+    "db:local:start": "node scripts/local-db.mjs start",
+    "db:local:stop": "node scripts/local-db.mjs stop",
+    "db:local:status": "node scripts/local-db.mjs status"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.73.0"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  }
+}

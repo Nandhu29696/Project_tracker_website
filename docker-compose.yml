@@ -1,0 +1,82 @@
+# Development stack:  docker compose up -d --build
+#   Web      http://localhost:5173
+#   API      http://localhost:4000/api/v1   (health: /api/health)
+#   Mailpit  http://localhost:8025          (all outgoing emails land here)
+#   Adminer  http://localhost:8080          (DB UI - server: db)
+name: project-tracker
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - '${DB_HOST_PORT:-5433}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER} -d ${DB_NAME}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.24
+    restart: unless-stopped
+    ports:
+      - '8025:8025' # web UI
+      - '1025:1025' # SMTP
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?schema=public
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+    ports:
+      - '4000:4000'
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./apps/api/prisma:/app/apps/api/prisma
+      - uploads:/app/apps/api/uploads
+      - ./packages/shared/src:/app/packages/shared/src
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: dev
+    environment:
+      API_PROXY_TARGET: http://api:4000
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./apps/web/src:/app/apps/web/src
+      - ./apps/web/index.html:/app/apps/web/index.html
+      - ./packages/shared/src:/app/packages/shared/src
+    depends_on:
+      - api
+
+  adminer:
+    image: adminer:5
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
+  uploads:

@@ -1,0 +1,542 @@
+// Prisma schema - Phase 1 (auth, users, audit, email log)
+// Later phases add: projects, project_members, environments, iterations,
+// work_items, comments, attachments, history, notifications, credentials ...
+
+// Prisma 7: the connection URL lives in prisma.config.ts (CLI / migrations)
+// and in src/lib/prisma.ts (runtime, via the pg driver adapter).
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  INVITE
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String    @db.VarChar(100)
+  email           String    @unique @db.VarChar(254)
+  passwordHash    String?   @map("password_hash")
+  googleId        String?   @unique @map("google_id")
+  avatarUrl       String?   @map("avatar_url")
+  role            Role      @default(EMPLOYEE)
+  isActive        Boolean   @default(true) @map("is_active")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  refreshTokens   RefreshToken[]
+  authTokens      AuthToken[]
+  auditLogs       AuditLog[]
+  ownedProjects   Project[]           @relation("ProjectOwner")
+  createdProjects Project[]           @relation("ProjectCreator")
+  memberships     ProjectMember[]
+  assignedItems   WorkItem[]          @relation("WorkItemAssignee")
+  createdItems    WorkItem[]          @relation("WorkItemCreator")
+  comments        Comment[]
+  attachments     Attachment[]
+  itemHistory     WorkItemHistory[]
+  createdLinks    WorkItemLink[]
+  savedQueries    SavedQuery[]
+  capacities      IterationCapacity[]
+  credentialsMade Credential[]        @relation("CredentialCreator")
+  credentialsEdit Credential[]        @relation("CredentialUpdater")
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Opaque refresh tokens - only the SHA-256 hash is stored.
+/// Tokens rotate on every refresh; all tokens of a login share a familyId
+/// so re-use of an old token can revoke the whole family.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  familyId  String    @map("family_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?   @map("user_agent") @db.VarChar(500)
+  ip        String?   @db.VarChar(64)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+/// One-time tokens sent by email (verify email, reset password, invite).
+model AuthToken {
+  id        String        @id @default(uuid()) @db.Uuid
+  userId    String        @map("user_id") @db.Uuid
+  type      AuthTokenType
+  tokenHash String        @unique @map("token_hash")
+  expiresAt DateTime      @map("expires_at")
+  usedAt    DateTime?     @map("used_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("auth_tokens")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String   @db.VarChar(100)
+  entity    String   @db.VarChar(50)
+  entityId  String?  @map("entity_id") @db.VarChar(64)
+  metadata  Json?
+  ip        String?  @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model EmailLog {
+  id        String      @id @default(uuid()) @db.Uuid
+  to        String      @db.VarChar(254)
+  subject   String      @db.VarChar(255)
+  template  String      @db.VarChar(64)
+  status    EmailStatus
+  error     String?
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([to])
+  @@index([createdAt])
+  @@map("email_logs")
+}
+
+// =============================================================================
+// Phase 2 - projects, members, environments, categories
+// =============================================================================
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  CLIENT_NO_RESPONSE
+  COMPLETED
+  CANCELLED
+}
+
+enum DevStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ProjectRole {
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+enum EnvironmentType {
+  DEV
+  QA
+  UAT
+  STAGING
+  PROD
+}
+
+enum DeploymentStatus {
+  NOT_DEPLOYED
+  DEPLOYED
+  LIVE
+  DOWN
+}
+
+/// Admin-configurable project categories (AI Tool, Web App, Mobile, Website ...)
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(50)
+  color     String   @default("#64748b") @db.VarChar(7)
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  projects Project[]
+
+  @@map("categories")
+}
+
+model Project {
+  id            String        @id @default(uuid()) @db.Uuid
+  /// Short unique key used as work item prefix, e.g. BCM -> BCM-12 (Phase 3)
+  key           String        @unique @db.VarChar(10)
+  name          String        @db.VarChar(120)
+  description   String?
+  categoryId    String?       @map("category_id") @db.Uuid
+  priority      Priority      @default(MEDIUM)
+  status        ProjectStatus @default(ACTIVE)
+  devStatus     DevStatus     @default(NOT_STARTED) @map("dev_status")
+  startDate     DateTime?     @map("start_date") @db.Date
+  targetDate    DateTime?     @map("target_date") @db.Date
+  ownerId       String?       @map("owner_id") @db.Uuid
+  createdById   String?       @map("created_by_id") @db.Uuid
+  /// Next work item number for this project (Phase 3)
+  workItemSeq   Int           @default(0) @map("work_item_seq")
+  /// Board configuration, e.g. { "wipLimits": { "in_progress": 5 } }
+  boardSettings Json          @default("{}") @map("board_settings")
+  archivedAt    DateTime?     @map("archived_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  category     Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  owner        User?           @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdBy    User?           @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  members      ProjectMember[]
+  environments Environment[]
+  workItems    WorkItem[]
+  iterations   Iteration[]
+  credentials  Credential[]
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([archivedAt])
+  @@map("projects")
+}
+
+model ProjectMember {
+  projectId String      @map("project_id") @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  role      ProjectRole @default(MEMBER)
+  addedAt   DateTime    @default(now()) @map("added_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model Environment {
+  id          String           @id @default(uuid()) @db.Uuid
+  projectId   String           @map("project_id") @db.Uuid
+  type        EnvironmentType
+  displayName String?          @map("display_name") @db.VarChar(150)
+  url         String?          @db.VarChar(500)
+  status      DeploymentStatus @default(NOT_DEPLOYED)
+  deployedAt  DateTime?        @map("deployed_at") @db.Date
+  notes       String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, type])
+  @@map("environments")
+}
+
+// =============================================================================
+// Phase 3 - work items, links, comments, attachments, history, saved queries
+// =============================================================================
+
+enum WorkItemType {
+  EPIC
+  FEATURE
+  STORY
+  BUG
+  TASK
+}
+
+enum WorkItemState {
+  NEW
+  TRIAGED
+  TODO
+  ACTIVE
+  IN_PROGRESS
+  RESOLVED
+  VERIFIED
+  DONE
+  CLOSED
+  REMOVED
+}
+
+enum Severity {
+  S1_CRITICAL
+  S2_HIGH
+  S3_MEDIUM
+  S4_LOW
+}
+
+enum Resolution {
+  FIXED
+  WONT_FIX
+  DUPLICATE
+  CANNOT_REPRODUCE
+  BY_DESIGN
+}
+
+enum LinkType {
+  RELATES
+  BLOCKS
+  DUPLICATES
+}
+
+model WorkItem {
+  id               String           @id @default(uuid()) @db.Uuid
+  projectId        String           @map("project_id") @db.Uuid
+  /// Per-project sequence -> key "<PROJECT KEY>-<number>"
+  number           Int
+  type             WorkItemType
+  title            String           @db.VarChar(255)
+  description      String?
+  state            WorkItemState
+  priority         Priority         @default(MEDIUM)
+  severity         Severity?
+  resolution       Resolution?
+  storyPoints      Float?           @map("story_points")
+  originalEstimate Float?           @map("original_estimate")
+  remainingWork    Float?           @map("remaining_work")
+  completedWork    Float?           @map("completed_work")
+  startDate        DateTime?        @map("start_date") @db.Date
+  dueDate          DateTime?        @map("due_date") @db.Date
+  tags             String[]         @default([])
+  environment      EnvironmentType?
+  reproSteps       String?          @map("repro_steps")
+  expectedResult   String?          @map("expected_result")
+  actualResult     String?          @map("actual_result")
+  assigneeId       String?          @map("assignee_id") @db.Uuid
+  createdById      String?          @map("created_by_id") @db.Uuid
+  parentId         String?          @map("parent_id") @db.Uuid
+  iterationId      String?          @map("iteration_id") @db.Uuid
+  /// Position on boards / backlog (Phase 4)
+  rank             Float            @default(0)
+  stateChangedAt   DateTime         @default(now()) @map("state_changed_at")
+  closedAt         DateTime?        @map("closed_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee      User?             @relation("WorkItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy     User?             @relation("WorkItemCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  parent        WorkItem?         @relation("WorkItemTree", fields: [parentId], references: [id], onDelete: SetNull)
+  iteration     Iteration?        @relation(fields: [iterationId], references: [id], onDelete: SetNull)
+  children      WorkItem[]        @relation("WorkItemTree")
+  outgoingLinks WorkItemLink[]    @relation("LinkSource")
+  incomingLinks WorkItemLink[]    @relation("LinkTarget")
+  comments      Comment[]
+  attachments   Attachment[]
+  history       WorkItemHistory[]
+
+  @@unique([projectId, number])
+  @@index([projectId, state])
+  @@index([assigneeId, state])
+  @@index([parentId])
+  @@index([iterationId])
+  @@index([type])
+  @@index([tags], type: Gin)
+  @@map("work_items")
+}
+
+model WorkItemLink {
+  id          String   @id @default(uuid()) @db.Uuid
+  sourceId    String   @map("source_id") @db.Uuid
+  targetId    String   @map("target_id") @db.Uuid
+  type        LinkType
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  source    WorkItem @relation("LinkSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target    WorkItem @relation("LinkTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([sourceId, targetId, type])
+  @@index([targetId])
+  @@map("work_item_links")
+}
+
+model Comment {
+  id         String    @id @default(uuid()) @db.Uuid
+  workItemId String    @map("work_item_id") @db.Uuid
+  authorId   String?   @map("author_id") @db.Uuid
+  body       String
+  /// user ids mentioned with @
+  mentions   String[]  @default([]) @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  editedAt   DateTime? @map("edited_at")
+
+  workItem WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  author   User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([workItemId, createdAt])
+  @@map("comments")
+}
+
+model Attachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  workItemId   String   @map("work_item_id") @db.Uuid
+  uploadedById String?  @map("uploaded_by_id") @db.Uuid
+  fileName     String   @map("file_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(150)
+  size         Int
+  /// random file name inside UPLOAD_DIR
+  storageKey   String   @unique @map("storage_key") @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([workItemId])
+  @@map("attachments")
+}
+
+model WorkItemHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  workItemId String   @map("work_item_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  field      String   @db.VarChar(50)
+  oldValue   String?  @map("old_value")
+  newValue   String?  @map("new_value")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  workItem WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  actor    User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workItemId, createdAt])
+  @@map("work_item_history")
+}
+
+model SavedQuery {
+  id        String   @id @default(uuid()) @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String   @db.VarChar(60)
+  filters   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, name])
+  @@map("saved_queries")
+}
+
+// =============================================================================
+// Phase 4 - sprints, capacity, burndown snapshots, credentials vault
+// =============================================================================
+
+enum IterationState {
+  PLANNED
+  ACTIVE
+  COMPLETED
+}
+
+model Iteration {
+  id             String         @id @default(uuid()) @db.Uuid
+  projectId      String         @map("project_id") @db.Uuid
+  name           String         @db.VarChar(80)
+  goal           String?
+  startDate      DateTime       @map("start_date") @db.Date
+  endDate        DateTime       @map("end_date") @db.Date
+  state          IterationState @default(PLANNED)
+  startedAt      DateTime?      @map("started_at")
+  completedAt    DateTime?      @map("completed_at")
+  /// Remaining hours / points when the sprint started - fixed start of the burndown ideal line
+  baselineWork   Float?         @map("baseline_work")
+  baselinePoints Float?         @map("baseline_points")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  project   Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workItems WorkItem[]
+  capacity  IterationCapacity[]
+  snapshots IterationSnapshot[]
+
+  @@index([projectId, state])
+  @@map("iterations")
+}
+
+model IterationCapacity {
+  iterationId String @map("iteration_id") @db.Uuid
+  userId      String @map("user_id") @db.Uuid
+  hoursPerDay Float  @map("hours_per_day")
+  daysOff     Int    @default(0) @map("days_off")
+
+  iteration Iteration @relation(fields: [iterationId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([iterationId, userId])
+  @@map("iteration_capacity")
+}
+
+/// One row per sprint per day - the burndown chart is drawn from these.
+model IterationSnapshot {
+  iterationId     String   @map("iteration_id") @db.Uuid
+  date            DateTime @db.Date
+  remainingWork   Float    @map("remaining_work")
+  remainingPoints Float    @map("remaining_points")
+  totalPoints     Float    @map("total_points")
+  openItems       Int      @map("open_items")
+
+  iteration Iteration @relation(fields: [iterationId], references: [id], onDelete: Cascade)
+
+  @@id([iterationId, date])
+  @@map("iteration_snapshots")
+}
+
+/// Secrets are AES-256-GCM encrypted with VAULT_ENCRYPTION_KEY; the record id and
+/// project id are bound in as additional authenticated data.
+model Credential {
+  id               String           @id @db.Uuid
+  projectId        String           @map("project_id") @db.Uuid
+  label            String           @db.VarChar(100)
+  username         String?          @db.VarChar(200)
+  url              String?          @db.VarChar(500)
+  environment      EnvironmentType?
+  notes            String?
+  secretCiphertext String           @map("secret_ciphertext")
+  secretIv         String           @map("secret_iv") @db.VarChar(32)
+  secretTag        String           @map("secret_tag") @db.VarChar(32)
+  keyVersion       Int              @default(1) @map("key_version")
+  createdById      String?          @map("created_by_id") @db.Uuid
+  updatedById      String?          @map("updated_by_id") @db.Uuid
+  lastRotatedAt    DateTime         @default(now()) @map("last_rotated_at")
+  lastRevealedAt   DateTime?        @map("last_revealed_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("CredentialCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User?   @relation("CredentialUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@map("credentials")
+}
