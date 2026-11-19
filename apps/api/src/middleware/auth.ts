@@ -21,9 +21,18 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true, role: true, isActive: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+      emailVerificationRequired: true,
+    },
   });
   if (!user || !user.isActive) throw unauthorized('Account is not active', 'ACCOUNT_INACTIVE');
+  if (user.emailVerificationRequired)
+    throw unauthorized('Please verify your email before continuing', 'EMAIL_NOT_VERIFIED');
 
   req.user = { id: user.id, name: user.name, email: user.email, role: user.role };
   next();

@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight, MailPlus, Search, UserPlus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MailPlus, Pencil, Search, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   createUserSchema,
   ROLE_LABELS,
   ROLES,
+  updateUserSchema,
   type Paginated,
   type PublicUser,
   type Role,
@@ -122,7 +123,108 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
-function UserActions({ user, compact }: { user: PublicUser; compact?: boolean }) {
+function EditUserDialog({ user, onClose }: { user: PublicUser | null; onClose: () => void }) {
+  return (
+    <Dialog
+      open={!!user}
+      onClose={onClose}
+      title="Edit user"
+      description="Changing the email sends a verification link to the new address and signs the user out."
+    >
+      {user && <EditUserForm key={user.id} user={user} onClose={onClose} />}
+    </Dialog>
+  );
+}
+
+function EditUserForm({ user, onClose }: { user: PublicUser; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { user: me } = useAuth();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(updateUserSchema),
+    defaultValues: { name: user.name, email: user.email, role: user.role },
+  });
+
+  const onSubmit = handleSubmit(async (values) => {
+    try {
+      const emailChanged = values.email !== user.email;
+      await api.patch(`/users/${user.id}`, values);
+      toast.success(
+        emailChanged
+          ? 'User updated. A verification link was sent to the new email.'
+          : 'User updated',
+      );
+      await qc.invalidateQueries({ queryKey: ['users'] });
+      onClose();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
+  });
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      <Field label="Full name" error={errors.name?.message}>
+        {(id, d) => (
+          <Input
+            id={id}
+            autoFocus
+            aria-invalid={!!errors.name}
+            aria-describedby={d}
+            {...register('name')}
+          />
+        )}
+      </Field>
+      <Field label="Email" error={errors.email?.message}>
+        {(id, d) => (
+          <Input
+            id={id}
+            type="email"
+            aria-invalid={!!errors.email}
+            aria-describedby={d}
+            {...register('email')}
+          />
+        )}
+      </Field>
+      <Field label="Role" error={errors.role?.message}>
+        {(id) => (
+          <Select id={id} disabled={me?.id === user.id} {...register('role')}>
+            {ROLES.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABELS[r]}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      {me?.id === user.id && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          You cannot change your own role.
+        </p>
+      )}
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button type="submit" loading={isSubmitting}>
+          Save changes
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function UserActions({
+  user,
+  compact,
+  onEdit,
+}: {
+  user: PublicUser;
+  compact?: boolean;
+  onEdit: (user: PublicUser) => void;
+}) {
   const { user: me, can } = useAuth();
   const qc = useQueryClient();
   const isMe = me?.id === user.id;
@@ -151,19 +253,10 @@ function UserActions({ user, compact }: { user: PublicUser; compact?: boolean })
         compact ? 'flex flex-wrap items-center gap-2' : 'flex items-center justify-end gap-2'
       }
     >
-      <Select
-        aria-label={`Role for ${user.name}`}
-        value={user.role}
-        disabled={isMe || update.isPending}
-        onChange={(e) => update.mutate({ role: e.target.value as Role })}
-        className="h-8 w-32 text-xs"
-      >
-        {ROLES.map((r) => (
-          <option key={r} value={r}>
-            {ROLE_LABELS[r]}
-          </option>
-        ))}
-      </Select>
+      <Badge tone={roleTone[user.role]}>{ROLE_LABELS[user.role]}</Badge>
+      <Button size="sm" variant="ghost" disabled={update.isPending} onClick={() => onEdit(user)}>
+        <Pencil className="h-4 w-4" /> Edit
+      </Button>
       {!user.hasPassword && !user.googleLinked && user.isActive && (
         <Can permission="user:create">
           <Button
@@ -203,6 +296,7 @@ export function UsersPage() {
   const [status, setStatus] = useState<'' | 'active' | 'inactive'>('');
   const [page, setPage] = useState(1);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<PublicUser | null>(null);
   const search = useDebounced(q);
 
   const { data, isLoading, isFetching, error } = useQuery({
@@ -339,7 +433,7 @@ export function UsersPage() {
                         {formatDateTime(u.lastLoginAt)}
                       </td>
                       <td className="px-4 py-3">
-                        <UserActions user={u} />
+                        <UserActions user={u} onEdit={setEditingUser} />
                       </td>
                     </tr>
                   ))}
@@ -359,7 +453,7 @@ export function UsersPage() {
                     </div>
                     <StatusBadge user={u} />
                   </div>
-                  <UserActions user={u} compact />
+                  <UserActions user={u} compact onEdit={setEditingUser} />
                 </li>
               ))}
             </ul>
@@ -396,6 +490,7 @@ export function UsersPage() {
         </div>
       </Card>
 
+      <EditUserDialog user={editingUser} onClose={() => setEditingUser(null)} />
       <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </div>
   );

@@ -83,7 +83,11 @@ export async function rotateSession(req: Request, res: Response): Promise<AuthRe
     throw unauthorized('Session revoked', 'SESSION_REVOKED');
   }
 
-  if (existing.expiresAt < new Date() || !existing.user.isActive) {
+  if (
+    existing.expiresAt < new Date() ||
+    !existing.user.isActive ||
+    existing.user.emailVerificationRequired
+  ) {
     clearRefreshCookie(res);
     throw unauthorized('Session expired', 'SESSION_EXPIRED');
   }

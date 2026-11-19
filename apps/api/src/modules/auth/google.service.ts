@@ -111,6 +111,7 @@ export async function handleGoogleCallback(req: Request, res: Response) {
             googleId: profile.sub,
             avatarUrl: byEmail.avatarUrl ?? profile.picture ?? null,
             emailVerifiedAt: byEmail.emailVerifiedAt ?? new Date(),
+            emailVerificationRequired: false,
           },
         });
         audit({
@@ -145,6 +146,7 @@ export async function handleGoogleCallback(req: Request, res: Response) {
     }
 
     if (!user.isActive) return failRedirect(res, 'account_inactive');
+    if (user.emailVerificationRequired) return failRedirect(res, 'email_not_verified');
 
     user = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await createSession(user, req, res); // sets refresh cookie; web app fetches the access token via /auth/refresh

@@ -74,7 +74,10 @@ export async function register(
 export async function verifyEmail(token: string) {
   const { user } = await consumeAuthToken(token, ['EMAIL_VERIFICATION']);
   if (!user.emailVerifiedAt) {
-    await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerifiedAt: new Date(), emailVerificationRequired: false },
+    });
     sendEmailLater(user.email, templates.welcome(user.name, links.login()));
     audit({ actorId: user.id, action: 'user.email_verified', entity: 'user', entityId: user.id });
   }
@@ -106,7 +109,7 @@ export async function login(input: LoginInput, req: Request, res: Response): Pro
     throw unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
   }
   if (!user.isActive) throw forbidden('Your account has been deactivated', 'ACCOUNT_INACTIVE');
-  if (env.REQUIRE_EMAIL_VERIFICATION && !user.emailVerifiedAt) {
+  if (user.emailVerificationRequired || (env.REQUIRE_EMAIL_VERIFICATION && !user.emailVerifiedAt)) {
     throw new AppError(403, 'EMAIL_NOT_VERIFIED', 'Please verify your email before signing in');
   }
 
@@ -150,6 +153,7 @@ export async function resetPassword(input: ResetPasswordInput) {
       passwordHash: await hashPassword(input.password),
       // clicking an emailed link proves ownership of the inbox
       emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+      emailVerificationRequired: false,
     },
   });
   await revokeAllSessions(user.id);

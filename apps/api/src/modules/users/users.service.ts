@@ -7,11 +7,12 @@ import type {
   UpdateUserInput,
 } from '@tracker/shared';
 import { audit } from '../../lib/audit';
+import { generateToken, sha256 } from '../../lib/crypto';
 import { badRequest, conflict, notFound } from '../../lib/errors';
 import { sendEmailLater } from '../../lib/mail/mailer';
 import { templates } from '../../lib/mail/templates';
 import { prisma } from '../../lib/prisma';
-import { createAuthToken } from '../auth/auth-tokens';
+import { createAuthToken, TOKEN_TTL_MS } from '../auth/auth-tokens';
 import { links } from '../auth/auth.service';
 import { revokeAllSessions } from '../auth/session';
 import { toPublicUser } from './user.mapper';
@@ -97,6 +98,12 @@ export async function updateUser(
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw notFound('User not found');
 
+  const emailChanged = input.email !== undefined && input.email !== user.email;
+  if (emailChanged) {
+    const existing = await prisma.user.findUnique({ where: { email: input.email } });
+    if (existing) throw conflict('A user with this email already exists', 'EMAIL_TAKEN');
+  }
+
   if (id === actor.id && input.role !== undefined && input.role !== user.role) {
     throw badRequest('You cannot change your own role', 'SELF_ROLE_CHANGE');
   }
@@ -113,13 +120,50 @@ export async function updateUser(
     if (activeAdmins <= 1) throw badRequest('At least one active admin is required', 'LAST_ADMIN');
   }
 
-  const updated = await prisma.user.update({
-    where: { id },
-    data: { name: input.name, role: input.role, isActive: input.isActive },
+  const verificationToken = emailChanged ? generateToken(32) : undefined;
+  const updated = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id },
+      data: {
+        name: input.name,
+        email: emailChanged ? input.email : undefined,
+        emailVerifiedAt: emailChanged ? null : undefined,
+        emailVerificationRequired: emailChanged ? true : undefined,
+        role: input.role,
+        isActive: input.isActive,
+      },
+    });
+
+    if (verificationToken) {
+      const now = new Date();
+      await tx.authToken.updateMany({
+        where: { userId: id, usedAt: null },
+        data: { usedAt: now },
+      });
+      await tx.authToken.create({
+        data: {
+          userId: id,
+          type: 'EMAIL_VERIFICATION',
+          tokenHash: sha256(verificationToken),
+          expiresAt: new Date(now.getTime() + TOKEN_TTL_MS.EMAIL_VERIFICATION),
+        },
+      });
+    }
+
+    return updatedUser;
   });
 
+  if (emailChanged && verificationToken) {
+    await revokeAllSessions(id);
+    sendEmailLater(
+      updated.email,
+      templates.verifyEmail(updated.name, links.verifyEmail(verificationToken)),
+    );
+    audit({ actorId: actor.id, action: 'user.email_changed', entity: 'user', entityId: id });
+  }
   if (input.role && input.role !== user.role) {
-    sendEmailLater(updated.email, templates.roleChanged(updated.name, updated.role));
+    if (!emailChanged)
+      sendEmailLater(updated.email, templates.roleChanged(updated.name, updated.role));
     audit({
       actorId: actor.id,
       action: 'user.role_changed',
@@ -129,8 +173,9 @@ export async function updateUser(
     });
   }
   if (input.isActive !== undefined && input.isActive !== user.isActive) {
-    if (!input.isActive) await revokeAllSessions(id);
-    sendEmailLater(updated.email, templates.accountStatus(updated.name, updated.isActive));
+    if (!input.isActive && !emailChanged) await revokeAllSessions(id);
+    if (!emailChanged)
+      sendEmailLater(updated.email, templates.accountStatus(updated.name, updated.isActive));
     audit({
       actorId: actor.id,
       action: updated.isActive ? 'user.reactivated' : 'user.deactivated',

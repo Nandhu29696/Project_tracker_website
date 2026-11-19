@@ -33,20 +33,21 @@ enum EmailStatus {
 }
 
 model User {
-  id                String    @id @default(uuid()) @db.Uuid
-  name              String    @db.VarChar(100)
-  email             String    @unique @db.VarChar(254)
-  passwordHash      String?   @map("password_hash")
-  googleId          String?   @unique @map("google_id")
-  avatarUrl         String?   @map("avatar_url")
-  role              Role      @default(EMPLOYEE)
-  isActive          Boolean   @default(true) @map("is_active")
-  emailVerifiedAt   DateTime? @map("email_verified_at")
-  lastLoginAt       DateTime? @map("last_login_at")
+  id                        String    @id @default(uuid()) @db.Uuid
+  name                      String    @db.VarChar(100)
+  email                     String    @unique @db.VarChar(254)
+  passwordHash              String?   @map("password_hash")
+  googleId                  String?   @unique @map("google_id")
+  avatarUrl                 String?   @map("avatar_url")
+  role                      Role      @default(EMPLOYEE)
+  isActive                  Boolean   @default(true) @map("is_active")
+  emailVerifiedAt           DateTime? @map("email_verified_at")
+  emailVerificationRequired Boolean   @default(false) @map("email_verification_required")
+  lastLoginAt               DateTime? @map("last_login_at")
   /// { "<NotificationType>": false } turns email off for that type (in-app is always on)
-  notificationPrefs Json      @default("{}") @map("notification_prefs")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  notificationPrefs         Json      @default("{}") @map("notification_prefs")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
 
   refreshTokens     RefreshToken[]
   authTokens        AuthToken[]

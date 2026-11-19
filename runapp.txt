@@ -1,0 +1,135 @@
+PROJECT TRACKER - RUN AND DEPLOY COMMANDS
+=========================================
+
+Production deployment on an Ubuntu/Debian VPS (including Hostinger)
+-------------------------------------------------------------------
+
+Requirements: Git, Docker Engine, and Docker Compose v2 installed on the VPS.
+Open ports 80 and 443 in the VPS firewall. Run these commands from the VPS:
+
+1. Get the project:
+
+   git clone https://github.com/Nandhu29696/Project_tracker_website.git
+   cd Project_tracker_website
+
+   If the repository is private, authenticate with GitHub using your approved
+   method. Never put a GitHub token in this file or in the repository URL.
+
+2. Configure the production environment:
+
+   cp .env.example .env
+   nano .env
+
+   Alternatively, securely upload your existing .env to the project root.
+   Do not commit or share .env. Before deploying, set production values:
+
+   NODE_ENV=production
+   APP_URL=https://YOUR_DOMAIN
+   CORS_ORIGIN=https://YOUR_DOMAIN
+   COOKIE_SECURE=true
+   TRUST_PROXY=1
+
+   Set strong, unique values for JWT_ACCESS_SECRET, COOKIE_SECRET,
+   DB_PASSWORD, and SEED_ADMIN_PASSWORD. Set SEED_ADMIN_NAME and
+   SEED_ADMIN_EMAIL. Configure real SMTP settings if the app must send email.
+   Set GOOGLE_CALLBACK_URL to
+   https://YOUR_DOMAIN/api/v1/auth/google/callback if using Google sign-in.
+   Configure TLS for YOUR_DOMAIN using your reverse proxy / Hostinger setup.
+
+   This production Compose setup creates and uses its own PostgreSQL container.
+   Set DB_USER, DB_PASSWORD, and DB_NAME in .env. It overrides DATABASE_URL
+   inside the API container to connect to that Postgres service. DB_HOST_PORT
+   is only used by the development Compose file. Use URL-safe characters for
+   DB_USER and DB_PASSWORD because Compose builds DATABASE_URL from these values.
+
+3. Build and start the production app:
+
+   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+
+   On API container startup, Prisma runs "migrate deploy" and creates/applies
+   the database tables from apps/api/prisma/migrations. Do not run
+   "npm run db:migrate" in production; that command is for creating development
+   migrations.
+
+4. Create the initial admin account and default categories (run once):
+
+   docker compose -f docker-compose.prod.yml --env-file .env exec api node dist/seed.js
+
+5. Check status and logs:
+
+   docker compose -f docker-compose.prod.yml --env-file .env ps
+   docker compose -f docker-compose.prod.yml --env-file .env logs -f api
+   docker compose -f docker-compose.prod.yml --env-file .env logs -f web
+
+   The website is served on port 80 by default. The API is served through the
+   website's /api proxy. Do not expose the Postgres container to the public
+   internet. Postgres data and uploaded attachments are stored in Docker
+   volumes; back them up regularly.
+
+6. Deploy later code updates:
+
+   git pull
+   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+
+   The API applies any pending production migrations when it starts.
+
+
+Local development on a machine with Docker Compose v2
+------------------------------------------------------
+
+From the project root, with .env configured:
+
+   docker compose up -d --build
+   docker compose ps
+   docker compose logs -f api
+
+The development API container applies migrations automatically. The web app
+is at http://localhost:5173 and the API health check is at
+http://localhost:4000/api/health. Create the initial admin account with:
+
+   docker compose exec api npx tsx prisma/seed.ts
+
+Stop development containers with:
+
+   docker compose down
+
+
+Local development without Docker
+---------------------------------
+
+Requirements: Node.js 22+, npm, and PostgreSQL. To use the project's isolated
+local PostgreSQL cluster, PostgreSQL binaries must be installed; the script
+auto-detects them under C:\Program Files\PostgreSQL\<version>\bin or accepts
+the PG_BIN environment variable.
+
+From the project root:
+
+   npm ci
+   npm run db:local:init
+   npm run db:deploy
+   npm run db:seed
+   npm run dev:api
+
+For later sessions, use "npm run db:local:start" instead of
+"npm run db:local:init". If you already have a PostgreSQL server and database,
+skip the local:init/start commands and make sure DATABASE_URL in .env points
+to that database.
+
+In a second terminal, from the project root:
+
+   npm run dev:web
+
+The web app is at http://localhost:5173 and the API is at
+http://localhost:4000. Run "npm run db:deploy" again after pulling code that
+adds migrations. Use "npm run db:migrate" only when creating a new migration
+during development.
+
+
+External/managed PostgreSQL note
+--------------------------------
+
+The included production Compose file is configured for its own Postgres
+container and overrides DATABASE_URL. Do not use the production commands above
+unchanged if you intend to use an external/managed PostgreSQL database; the
+Compose configuration must first be adjusted to use that database URL and not
+start its local db service.
